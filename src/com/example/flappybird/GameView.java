@@ -1,5 +1,6 @@
 package com.example.flappybird;
 
+import java.util.ArrayList;
 import java.util.Random;
 
 import android.content.Context;
@@ -26,14 +27,25 @@ public class GameView extends View {
 
     private final int PIPE_OPENING_HEIGHT = 350;
     private final int PIPE_WIDTH = 100;
-    private final int PLAYER_SIZE = 100;
+    private final int DIST_BETWEEN_PIPE = 500;
 
-    /* This is the start x location, pipes start spawning at location 0 */
-    private final int PLAYER_START_POSITION = -200;
+    private final int PLAYER_SIZE = 100;
+    private final int PLAYER_OFFSET = 20;
+
+    /** List of all pipe heights, generated as we go **/
+    private ArrayList<Integer> pipeHeights = new ArrayList<Integer>();
+
+    private Random random;
+
+    /** This is the start x location, pipes start spawning at location 0 **/
+    private final int PLAYER_START_POSITION = -1000;
+
+    private int nextPassedPipe = 0;
 
     public GameView(Context context) {
         super(context);
         paint = new Paint();
+        random = new Random(System.currentTimeMillis());
     }
 
     @Override
@@ -41,8 +53,7 @@ public class GameView extends View {
         super.onSizeChanged(w, h, oldw, oldh);
         screenHeight = h;
         screenWidth = w;
-
-        playerY = screenHeight / 2;
+        reset();
     }
 
     @Override
@@ -58,6 +69,8 @@ public class GameView extends View {
 
         drawPlayer(canvas);
         drawPipes(canvas);
+        drawScore(canvas);
+
         update();
         checkCollisions();
 
@@ -66,51 +79,76 @@ public class GameView extends View {
         invalidate();
     }
 
-    /*
+    /**
      * Draw the pipes on screen.
-     * 
-     * This uses the index of the pipes as seed into the random number generator
-     * in order to save the positions of pipes on screen. It would be better to
-     * save this information in a list, but this is simpler.
      */
     private void drawPipes(Canvas canvas) {
 
-        // Draw the pipes as green
-        paint.setColor(Color.GREEN);
+        /*
+         * The world is broken up on the x axis into to PIPE_WIDTH sized
+         * segments like |x| | | | |x| | | | | |x|. Every 5th segment has a pipe
+         * in it these indexes are just estimates of the pipes we need to draw.
+         * 
+         * Math is a little complex, not sure if this needs to be fixed.
+         */
 
-        // The world is broken up on the x axis into to PIPE_WIDTH sized
-        // segments
-        // like |x| | | | |x| | | | | |x|
-        // every 5th segment has a pipe in it
-        // these indexes are just estimates of the pipes we need to draw
-        final int lowIndex = (distanceTraveled - screenWidth) / PIPE_WIDTH;
-        final int highIndex = (int) ((distanceTraveled + 1.5 * screenWidth) / PIPE_WIDTH);
-        for (int i = lowIndex; i < highIndex; i++) {
-            if (i > 0 && i % 5 == 0) {
+        for (int index : getPipesOnScreen()) {
+            int height = getPipeHeight(index);
+            int left = getPipeLeft(index);
 
-                // Seeding the random number generator with the index gives us
-                // the same result
-                // every time for a single pipe.
-                Random random = new Random(i);
-                int height = random.nextInt(screenHeight) - PIPE_OPENING_HEIGHT;
-
-                int left = i * PIPE_WIDTH - distanceTraveled;
-
-                // Draw top pipe
-                Rect topPipeRect = new Rect(left, 0, left + PIPE_WIDTH, height);
-                canvas.drawRect(topPipeRect, paint);
-
-                // Draw bottom pipe
-                Rect bottomPipeRect = new Rect(left, height
-                        + PIPE_OPENING_HEIGHT, left + PIPE_WIDTH, screenHeight);
-                canvas.drawRect(bottomPipeRect, paint);
-            }
+            drawPipe(left, height, true, canvas);
+            drawPipe(left, height, false, canvas);
         }
 
     }
 
+    /**
+     * @return a list of pipe indexes that are currently on screen
+     */
+    private ArrayList<Integer> getPipesOnScreen() {
+        final int lowIndex = (distanceTraveled - screenWidth)
+                / (PIPE_WIDTH + DIST_BETWEEN_PIPE);
+        final int highIndex = (int) ((distanceTraveled + 1.5 * screenWidth) / (PIPE_WIDTH + DIST_BETWEEN_PIPE));
+        ArrayList<Integer> returnPipes = new ArrayList<Integer>();
+        for (int i = lowIndex; i < highIndex; i++) {
+            if (i >= 0) {
+                returnPipes.add(i);
+            }
+        }
+        return returnPipes;
+    }
+
+    private int getPipeLeft(int index) {
+        return index * (PIPE_WIDTH + DIST_BETWEEN_PIPE) - distanceTraveled;
+    }
+
+    private int getPipeHeight(int index) {
+        if (pipeHeights.size() - 1 < index) {
+            for (int i = pipeHeights.size() - 1; i < index; i++) {
+                pipeHeights.add(random.nextInt(screenHeight
+                        - PIPE_OPENING_HEIGHT));
+            }
+        }
+        return pipeHeights.get(index);
+    }
+
+    private void drawPipe(int x, int height, boolean isTopPipe, Canvas canvas) {
+
+        // Draw the pipes as green
+        paint.setColor(Color.GREEN);
+
+        Rect rect;
+        if (isTopPipe) {
+            rect = new Rect(x, 0, x + PIPE_WIDTH, height);
+        } else {
+            rect = new Rect(x, height + PIPE_OPENING_HEIGHT, x + PIPE_WIDTH,
+                    screenHeight);
+        }
+        canvas.drawRect(rect, paint);
+    }
+
     /*
-     * Draw the player as yellow rectangle
+     * Draw the player
      */
     private void drawPlayer(Canvas canvas) {
         // draw the player as yellow
@@ -118,7 +156,7 @@ public class GameView extends View {
 
         float top = playerY;
         float bottom = top + PLAYER_SIZE;
-        float left = 20;
+        float left = PLAYER_OFFSET;
         float right = left + PLAYER_SIZE;
 
         // Save where we drew the player for later in collisions
@@ -126,36 +164,36 @@ public class GameView extends View {
         canvas.drawRect(playerRect, paint);
     }
 
-    /*
+    private void drawScore(Canvas canvas) {
+        paint.setColor(Color.BLACK);
+        paint.setTextSize(50);
+        canvas.drawText("Score: " + nextPassedPipe, 50, 50, paint);
+    }
+
+    /**
      * Collision detection, collide with all possible pipes and the top/bottom
-     * of the screen
-     */
+     * of the screen.
+     **/
     private void checkCollisions() {
         if (playerY > screenHeight || playerY < 0) {
             reset();
             return;
         }
 
-        final int lowIndex = (distanceTraveled - screenWidth) / PIPE_WIDTH;
-        final int highIndex = (int) ((distanceTraveled + 1.5 * screenWidth) / PIPE_WIDTH);
-        for (int i = lowIndex; i < highIndex; i++) {
-            if (i > 0 && i % 5 == 0) {
-                Random random = new Random(i);
-                int height = random.nextInt(screenHeight) - PIPE_OPENING_HEIGHT;
+        for (int index : getPipesOnScreen()) {
+            int left = getPipeLeft(index);
+            int height = getPipeHeight(index);
 
-                int left = i * PIPE_WIDTH - distanceTraveled;
+            // perform bounding box collision detection
+            RectF topPipe = new RectF(left, 0, left + PIPE_WIDTH, height);
 
-                // perform bounding box collision detection
-                RectF topPipe = new RectF(left, 0, left + PIPE_WIDTH, height);
-                RectF bottomPipe = new RectF(left,
-                        height + PIPE_OPENING_HEIGHT, left + PIPE_WIDTH,
-                        screenHeight);
-                if (RectF.intersects(playerRect, topPipe)
-                        || RectF.intersects(playerRect, bottomPipe)) {
-                    reset();
-                    return;
-                }
+            RectF bottomPipe = new RectF(left, height + PIPE_OPENING_HEIGHT,
+                    left + PIPE_WIDTH, screenHeight);
 
+            if (RectF.intersects(playerRect, topPipe)
+                    || RectF.intersects(playerRect, bottomPipe)) {
+                reset();
+                return;
             }
         }
     }
@@ -165,15 +203,17 @@ public class GameView extends View {
      */
     private void reset() {
         playerY = screenHeight / 2;
-        distanceTraveled = -200;
+        distanceTraveled = PLAYER_START_POSITION;
         playerYVel = 0;
+        pipeHeights = new ArrayList<Integer>();
+        nextPassedPipe = 0;
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         switch (event.getAction()) {
         case MotionEvent.ACTION_DOWN:
-            playerYVel = -400;
+            playerYVel = -800;
             break;
         }
         return true;
@@ -189,8 +229,13 @@ public class GameView extends View {
             long diff = currentTime - lastFrame;
             float mult = ((float) diff / 1000f);
             playerY += mult * playerYVel;
-            playerYVel += mult * 1000;
+            playerYVel += mult * 2000;
             distanceTraveled += mult * 200;
+
+            int passingPipeRight = getPipeLeft(nextPassedPipe) + PIPE_WIDTH;
+            if (passingPipeRight < PLAYER_OFFSET) {
+                nextPassedPipe++;
+            }
         }
         lastFrame = currentTime;
     }
