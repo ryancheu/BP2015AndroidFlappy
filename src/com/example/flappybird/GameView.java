@@ -50,6 +50,8 @@ public class GameView extends View {
 
     private Bitmap birdBitmap;
     private Bitmap backgroundBitmap;
+    private Bitmap topPipeBitmap;
+    private Bitmap bottomPipeBitmap;
 
     private MediaPlayer flapSound;
 
@@ -63,6 +65,11 @@ public class GameView extends View {
                 R.drawable.bird);
         backgroundBitmap = BitmapFactory.decodeResource(getResources(),
                 R.drawable.background);
+
+        topPipeBitmap = BitmapFactory.decodeResource(getResources(),
+                R.drawable.obstacle_top);
+        bottomPipeBitmap = BitmapFactory.decodeResource(getResources(),
+                R.drawable.obstacle_bottom);
 
         flapSound = MediaPlayer.create(getContext(), R.raw.sfx_wing);
     }
@@ -155,27 +162,23 @@ public class GameView extends View {
     }
 
     private void drawPipe(int x, int height, boolean isTopPipe, Canvas canvas) {
-
-        // Draw the pipes as green
-        paint.setColor(Color.GREEN);
-
         Rect rect;
+        Bitmap toDraw;
         if (isTopPipe) {
             rect = new Rect(x, 0, x + PIPE_WIDTH, height);
+            toDraw = topPipeBitmap;
         } else {
             rect = new Rect(x, height + PIPE_OPENING_HEIGHT, x + PIPE_WIDTH,
                     screenHeight);
+            toDraw = bottomPipeBitmap;
         }
-        canvas.drawRect(rect, paint);
+        canvas.drawBitmap(toDraw, null, rect, paint);
     }
 
     /*
      * Draw the player
      */
     private void drawPlayer(Canvas canvas) {
-        // draw the player as yellow
-        paint.setColor(Color.YELLOW);
-
         float top = playerY;
         float bottom = top + PLAYER_HEIGHT;
         float left = PLAYER_OFFSET;
