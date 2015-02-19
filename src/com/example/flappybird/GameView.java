@@ -3,12 +3,17 @@ package com.example.flappybird;
 import java.util.ArrayList;
 import java.util.Random;
 
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.DialogInterface;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.media.MediaPlayer;
 import android.view.MotionEvent;
 import android.view.View;
 
@@ -29,7 +34,8 @@ public class GameView extends View {
     private final int PIPE_WIDTH = 100;
     private final int DIST_BETWEEN_PIPE = 500;
 
-    private final int PLAYER_SIZE = 100;
+    private final int PLAYER_WIDTH = 100;
+    private final int PLAYER_HEIGHT = 70;
     private final int PLAYER_OFFSET = 20;
 
     /** List of all pipe heights, generated as we go **/
@@ -42,10 +48,23 @@ public class GameView extends View {
 
     private int nextPassedPipe = 0;
 
+    private Bitmap birdBitmap;
+    private Bitmap backgroundBitmap;
+
+    private MediaPlayer flapSound;
+
+    private boolean paused = false;
+
     public GameView(Context context) {
         super(context);
         paint = new Paint();
         random = new Random(System.currentTimeMillis());
+        birdBitmap = BitmapFactory.decodeResource(getResources(),
+                R.drawable.bird);
+        backgroundBitmap = BitmapFactory.decodeResource(getResources(),
+                R.drawable.background);
+
+        flapSound = MediaPlayer.create(getContext(), R.raw.sfx_wing);
     }
 
     @Override
@@ -67,12 +86,15 @@ public class GameView extends View {
          * in a separate thread, but we'll do this for simplicity.
          */
 
+        drawBackgroud(canvas);
         drawPlayer(canvas);
         drawPipes(canvas);
         drawScore(canvas);
 
-        update();
-        checkCollisions();
+        if (!paused) {
+            update();
+            checkCollisions();
+        }
 
         // This call triggers the screen to redraw (basically call onDraw
         // again).
@@ -155,13 +177,14 @@ public class GameView extends View {
         paint.setColor(Color.YELLOW);
 
         float top = playerY;
-        float bottom = top + PLAYER_SIZE;
+        float bottom = top + PLAYER_HEIGHT;
         float left = PLAYER_OFFSET;
-        float right = left + PLAYER_SIZE;
+        float right = left + PLAYER_WIDTH;
 
         // Save where we drew the player for later in collisions
         playerRect = new RectF(left, top, right, bottom);
-        canvas.drawRect(playerRect, paint);
+        canvas.drawBitmap(birdBitmap, null, playerRect, paint);
+        // canvas.drawRect(playerRect, paint);
     }
 
     private void drawScore(Canvas canvas) {
@@ -170,13 +193,18 @@ public class GameView extends View {
         canvas.drawText("Score: " + nextPassedPipe, 50, 50, paint);
     }
 
+    private void drawBackgroud(Canvas canvas) {
+        RectF backgroundArea = new RectF(0, 0, screenWidth, screenHeight);
+        canvas.drawBitmap(backgroundBitmap, null, backgroundArea, paint);
+    }
+
     /**
      * Collision detection, collide with all possible pipes and the top/bottom
      * of the screen.
      **/
     private void checkCollisions() {
         if (playerY > screenHeight || playerY < 0) {
-            reset();
+            gameOver();
             return;
         }
 
@@ -192,16 +220,21 @@ public class GameView extends View {
 
             if (RectF.intersects(playerRect, topPipe)
                     || RectF.intersects(playerRect, bottomPipe)) {
-                reset();
+                gameOver();
                 return;
             }
         }
+    }
+
+    private void gameOver() {
+        showScoreDialog();
     }
 
     /*
      * Reset to starting location
      */
     private void reset() {
+        lastFrame = -1;
         playerY = screenHeight / 2;
         distanceTraveled = PLAYER_START_POSITION;
         playerYVel = 0;
@@ -214,6 +247,8 @@ public class GameView extends View {
         switch (event.getAction()) {
         case MotionEvent.ACTION_DOWN:
             playerYVel = -800;
+            flapSound.seekTo(0);
+            flapSound.start();
             break;
         }
         return true;
@@ -224,6 +259,7 @@ public class GameView extends View {
      * velocity, and adds gravity as well.
      */
     private void update() {
+
         long currentTime = System.currentTimeMillis();
         if (lastFrame != -1) {
             long diff = currentTime - lastFrame;
@@ -238,5 +274,27 @@ public class GameView extends View {
             }
         }
         lastFrame = currentTime;
+    }
+
+    private void showScoreDialog() {
+        paused = true;
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+
+        builder.setMessage("Your score was: " + nextPassedPipe).setTitle(
+                "Game over!");
+
+        builder.setPositiveButton("Play Again",
+                new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int id) {
+                        paused = false;
+                        reset();
+                        dialog.dismiss();
+                    }
+                });
+
+        AlertDialog dialog = builder.create();
+
+        dialog.show();
     }
 }
